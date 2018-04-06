@@ -194,8 +194,8 @@ protected:
   vec_t weights_grad;
   vec_t bias;
   vec_t bias_grad;
-  std::vector<vec_t> outputs;
-  std::vector<vec_t> outputs_grad;
+  vector<vec_t> outputs;
+  vector<vec_t> outputs_grad;
 };
 
 
@@ -308,8 +308,8 @@ public:
             typename OnBatchEnumerate,
             typename OnEpochEnumerate>
   void train(
-             const std::vector<vec_t> &inputs,
-             const std::vector<int> &labels,
+             const vector<vec_t> &inputs,
+             const vector<int> &labels,
              size_t batch_size,
              int epoch,
              float learning_rate,
@@ -414,7 +414,7 @@ T *reverse_endian(T *p) {
 }
 
 inline void parse_mnist_labels(const std::string &label_file,
-                               std::vector<int>& labels) {
+                               vector<int>& labels) {
   std::ifstream ifs(label_file.c_str(), std::ios::in | std::ios::binary);
 
   if (ifs.bad() || ifs.fail())
@@ -440,7 +440,7 @@ inline void parse_mnist_labels(const std::string &label_file,
 }
 
 inline void parse_mnist_images(const std::string &image_file,
-                               std::vector<vec_t> &images) {
+                               vector<vec_t> &images) {
 
   std::ifstream ifs(image_file.c_str(), std::ios::in | std::ios::binary);
 
@@ -467,7 +467,7 @@ inline void parse_mnist_images(const std::string &image_file,
   if (ifs.fail() || ifs.bad()) throw std::runtime_error("file error");
 
   size_t image_size = num_cols * num_rows;
-  std::vector<uint8_t> image_vec(image_size);
+  vector<uint8_t> image_vec(image_size);
 
     images.resize(num_items);
     for (uint32_t i = 0; i < num_items; i++) {
@@ -495,8 +495,8 @@ static void train(const std::string &data_dir_path,
   std::cout << "load models..." << std::endl;
 
   // load MNIST dataset
-  std::vector<int> train_labels, test_labels;
-  std::vector<vec_t> train_images, test_images;
+  vector<int> train_labels, test_labels;
+  vector<vec_t> train_images, test_images;
 
   parse_mnist_labels(data_dir_path + "/train-labels.idx1-ubyte",
                                train_labels);
@@ -528,7 +528,7 @@ static void train(const std::string &data_dir_path,
               << t.elapsed() << "s elapsed." << std::endl;
     ++epoch;
     auto res = nn.test(test_images, test_labels);
-    std::cout << "Accuray: " << res.second << "/" << res.first << std::endl;
+    std::cout << "Accuracy: " << res.second << "/" << res.first << std::endl;
 
     if (epoch <= n_train_epochs)
       std::cout << "Epoch " << epoch << "/" << n_train_epochs << "  ";
