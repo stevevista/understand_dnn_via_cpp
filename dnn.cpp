@@ -59,10 +59,7 @@ inline void zeros(vec_t &vec) {
 }
 
 class layer {
- public:
-
-  virtual ~layer() = default;
-
+public:
   layer(size_t in_dim,
         size_t out_dim)
       : weights(in_dim*out_dim)
@@ -254,6 +251,11 @@ class cross_entropy {
 
 class network {
 public:
+  network(const vector<int>& dims) {
+    for (size_t i=0; i<dims.size()-1; i++) {
+      layers_.push_back(layer(dims[i], dims[i+1]));
+    }
+  }
 
   template<typename ITER>
   vector<vec_t> forward(ITER inputs, size_t batch_size) {
@@ -365,7 +367,6 @@ public:
     }
   }
 
-private:
   void onehot(const vector<int> &labels,
                  vector<vec_t> &vec, const int outdim) const {
 
@@ -375,13 +376,6 @@ private:
       vec.emplace_back(outdim, 0);
       vec.back()[t] = 1;
     }
-  }
-
-public:
-  network& add_layer(size_t in_dim, size_t out_dim) {
-    layers_.push_back(layer(in_dim, out_dim));
-
-    return *this;
   }
 
 protected:
@@ -496,10 +490,7 @@ static void train(const std::string &data_dir_path,
 
   float lambda = 0.00001;
 
-  network nn;
-
-  nn.add_layer(784, 100)
-    .add_layer(100, 10);
+  network nn({784, 30, 30, 10});
 
   std::cout << "load models..." << std::endl;
 
