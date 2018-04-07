@@ -12,6 +12,38 @@
 #include <vector>
 #include <random>
 
+/*
+
+     -----
+     |   |
+     |   |           -----
+     |   |           |   |           -----
+     |   |           |   |           |   |
+     |784| == W1 ==> |30 | == W2 ==> |10 |
+     |   |           |   |           |   |
+     |   |           |   |           -----
+     |   |           ----- 
+     -----  
+  input layer     hidden layer     output layer
+      (I)             (H)             (O)
+
+  (bias and sigmoid activation ignored)
+
+  data:
+    I : N x 784
+    W1: 784 x 30
+    W2: 30 x 10
+    O : N x 10
+
+  W1 and W2 are trainable parameters
+
+  forward:
+    I * W1 => H (N x 30)
+    H * W2 => O (N x 10)
+
+  backward: 
+
+*/ 
 
 using std::vector;
 
@@ -297,10 +329,14 @@ public:
     }
   }
 
+  vec_t predict(const vec_t &in) { 
 
-  int predict(const vec_t &in) { 
+    return forward(&in, 1)[0];
+  }
 
-    auto out = forward(&in, 1)[0];
+  int predict_label(const vec_t &in) { 
+
+    auto out = predict(in);
     return std::max_element(out.begin(), out.end()) - out.begin();
   }
 
@@ -309,7 +345,7 @@ public:
             typename OnEpochEnumerate>
   void train(
              const vector<vec_t> &inputs,
-             const vector<int> &labels,
+             const vector<vec_t> &labels,
              size_t batch_size,
              int epoch,
              float learning_rate,
@@ -317,14 +353,11 @@ public:
              OnBatchEnumerate on_batch_enumerate,
              OnEpochEnumerate on_epoch_enumerate) {
 
-    vector<vec_t> truths;
-    onehot(labels, truths, 10);
-
     for (int iter = 0; iter < epoch; iter++) {
       for (size_t i = 0; i < inputs.size(); i += batch_size) {
 
           auto size = std::min(batch_size, inputs.size() - i);
-          bprop<LOSS>(&inputs[i], forward(&inputs[i], size), &truths[i]);
+          bprop<LOSS>(&inputs[i], forward(&inputs[i], size), &labels[i]);
           for (auto& l : layers_) {
             l.update_weight(learning_rate, lambda);
           }
@@ -335,16 +368,6 @@ public:
     }
   }
 
-  std::pair<size_t, size_t> test(const vector<vec_t> &in, const vector<int> &truth) {
-    size_t num_total = 0, 
-            num_success = 0;
-    for (size_t i = 0; i < in.size(); i++) {
-
-      if (predict(in[i]) == truth[i]) num_success++;
-      num_total++;
-    }
-    return {num_total, num_success};
-  }
 
   void load(const std::string &filename) {
 
@@ -367,22 +390,21 @@ public:
     }
   }
 
-  void onehot(const vector<int> &labels,
-                 vector<vec_t> &vec, const int outdim) const {
-
-    vec.reserve(labels.size());
-    for (auto t : labels) {
-      assert(t < outdim);
-      vec.emplace_back(outdim, 0);
-      vec.back()[t] = 1;
-    }
-  }
-
 protected:
   vector<layer> layers_;
 };
 
 
+template<typename LABLE_ARRAY>
+static void onehot(const LABLE_ARRAY &labels, vector<vec_t> &vec, const int output_dim) {
+
+    vec.reserve(labels.size());
+    for (auto t : labels) {
+      assert(t < output_dim);
+      vec.emplace_back(output_dim, 0);
+      vec.back()[t] = 1;
+    }
+}
 
 class timer {
  public:
@@ -425,10 +447,9 @@ inline void parse_mnist_labels(const std::string &label_file,
   ifs.read(reinterpret_cast<char *>(&magic_number), 4);
   ifs.read(reinterpret_cast<char *>(&num_items), 4);
 
-  reverse_endian(&magic_number);
   reverse_endian(&num_items);
 
-  if (magic_number != 0x00000801 || num_items <= 0)
+  if (magic_number != 0x01080000 || num_items <= 0)
     throw std::runtime_error("MNIST label-file format error");
 
   labels.resize(num_items);
@@ -439,35 +460,33 @@ inline void parse_mnist_labels(const std::string &label_file,
   }
 }
 
-inline void parse_mnist_images(const std::string &image_file,
+static void parse_mnist_images(const std::string &image_file,
                                vector<vec_t> &images) {
 
-  std::ifstream ifs(image_file.c_str(), std::ios::in | std::ios::binary);
+    std::ifstream ifs(image_file.c_str(), std::ios::in | std::ios::binary);
 
-  if (ifs.bad() || ifs.fail())
-    throw std::runtime_error("failed to open file:" + image_file);
+    if (ifs.bad() || ifs.fail())
+      throw std::runtime_error("failed to open file:" + image_file);
 
-  uint32_t magic_number;
-  uint32_t num_items;
-  uint32_t num_rows;
-  uint32_t num_cols;
+    uint32_t magic_number;
+    uint32_t num_items;
+    uint32_t num_rows;
+    uint32_t num_cols;
 
-  ifs.read(reinterpret_cast<char *>(&magic_number), 4);
-  ifs.read(reinterpret_cast<char *>(&num_items), 4);
-  ifs.read(reinterpret_cast<char *>(&num_rows), 4);
-  ifs.read(reinterpret_cast<char *>(&num_cols), 4);
+    ifs.read(reinterpret_cast<char *>(&magic_number), 4);
+    ifs.read(reinterpret_cast<char *>(&num_items), 4);
+    ifs.read(reinterpret_cast<char *>(&num_rows), 4);
+    ifs.read(reinterpret_cast<char *>(&num_cols), 4);
 
-  reverse_endian(&magic_number);
-  reverse_endian(&num_items);
-  reverse_endian(&num_rows);
-  reverse_endian(&num_cols);
+    reverse_endian(&num_items);
+    reverse_endian(&num_rows);
+    reverse_endian(&num_cols);
 
-  if (magic_number != 0x00000803 || num_items <= 0)
-    throw std::runtime_error("MNIST label-file format error");
-  if (ifs.fail() || ifs.bad()) throw std::runtime_error("file error");
+    if (magic_number != 0x03080000 || num_items <= 0)
+      throw std::runtime_error("MNIST label-file format error");
 
-  size_t image_size = num_cols * num_rows;
-  vector<uint8_t> image_vec(image_size);
+    size_t image_size = num_cols * num_rows;
+    vector<uint8_t> image_vec(image_size);
 
     images.resize(num_items);
     for (uint32_t i = 0; i < num_items; i++) {
@@ -483,20 +502,20 @@ inline void parse_mnist_images(const std::string &image_file,
 }
 
 
-static void train(const std::string &data_dir_path,
+static void train_mnist(const std::string &data_dir_path,
                         double learning_rate,
                         const int n_train_epochs,
                         const int batch_size) {
 
   float lambda = 0.00001;
 
-  network nn({784, 30, 30, 10});
+  network nn({784, 30, 10});
 
   std::cout << "load models..." << std::endl;
 
   // load MNIST dataset
   vector<int> train_labels, test_labels;
-  vector<vec_t> train_images, test_images;
+  vector<vec_t> train_images, test_images, truth_labels;
 
   parse_mnist_labels(data_dir_path + "/train-labels.idx1-ubyte",
                                train_labels);
@@ -511,7 +530,6 @@ static void train(const std::string &data_dir_path,
 
   const auto samples_count = train_images.size();
   size_t trained_count = 0;
-  std::string output_s;
 
   timer t;
 
@@ -520,18 +538,18 @@ static void train(const std::string &data_dir_path,
   // create callback
   auto on_enumerate_epoch = [&]() {
 
-    trained_count = 0;
-    for (size_t i=0; i < output_s.size(); ++i) std::cout << '\b';
-    output_s = "";
-
-    std::cout << " finished. "
+    std::cout << "Epoch " << epoch << "/" << n_train_epochs << " finished. "
               << t.elapsed() << "s elapsed." << std::endl;
     ++epoch;
-    auto res = nn.test(test_images, test_labels);
-    std::cout << "Accuracy: " << res.second << "/" << res.first << std::endl;
+    trained_count = 0;
 
-    if (epoch <= n_train_epochs)
-      std::cout << "Epoch " << epoch << "/" << n_train_epochs << "  ";
+    // verify 
+    size_t num_correct = 0;
+    for (size_t i = 0; i < test_images.size(); i++) {
+
+      if (nn.predict_label(test_images[i]) == test_labels[i]) num_correct++;
+    }
+    std::cout << "Accuracy: " << num_correct << "/" << test_images.size() << std::endl;
 
     t.restart();
   };
@@ -543,16 +561,14 @@ static void train(const std::string &data_dir_path,
     std::ostringstream ss;
     ss << trained_count << "/" << samples_count;
 
-    for (size_t i=0; i < output_s.size(); ++i) std::cout << '\b';
-    output_s = ss.str();
-    std::cout << output_s;
-
+    std::cout.flags(std::ios::left);
+    std::cout << std::setw(20) << ss.str();
+    for (size_t i=0; i < 20; ++i) std::cout << '\b';
   };
 
-  std::cout << "Epoch " << epoch << "/" << n_train_epochs << "  ";
-
   // training
-  nn.train<cross_entropy>(train_images, train_labels, batch_size,
+  onehot(train_labels, truth_labels, 10);
+  nn.train<cross_entropy>(train_images, truth_labels, batch_size,
                           n_train_epochs, learning_rate, lambda, 
                           on_enumerate_minibatch,
                           on_enumerate_epoch);
@@ -562,6 +578,99 @@ static void train(const std::string &data_dir_path,
   nn.save("weights.txt");
 }
 
+static void train_arth(double learning_rate,
+                        const int n_train_epochs,
+                        char op,
+                        int test_x,
+                        int test_y) {
+
+  vector<int> train_labels;
+  vector<vec_t> train_images, truth_labels;
+                         
+  int in_max = std::max(test_x, test_y);
+  in_max = std::max(in_max, 2);
+
+  constexpr int invalid = 99999999;
+  int max_t = 0;
+  int min_t = 0;
+  for (int x=0; x<=in_max; x++) {
+    for (int y=0; y<=in_max; y++) {
+      int t;
+      switch(op) {
+          case '*':
+          case 'x':
+          case 'X':
+            t = x*y;
+            op = 'x';
+            break;
+          case '-':
+            t = x-y;
+            break;
+          case '/':
+            t = y==0 ? invalid : x/y;
+            break;
+          case '+':
+          default:
+            t = x+y;
+            op = '+';
+            break;
+        }
+
+        train_images.push_back({float(x), float(y)});
+        train_labels.push_back(t);
+
+        if (t != invalid) {
+          if (t > max_t) {
+            max_t = t;
+          }
+          if (t < min_t) {
+            min_t = t;
+          }
+        }
+    }
+  }
+
+  const auto range = (max_t-min_t)+2; // one for invalid
+
+  for (auto& t : train_labels) {
+    if (t != invalid)
+        t -= min_t;
+    else 
+        t = range - 1;
+  }
+
+  network nn({2, 30, range});
+
+  int epoch = 1;
+
+  auto on_enumerate_epoch = [&]() {
+    ++epoch;
+    std::ostringstream ss;
+    ss << epoch << "/" << n_train_epochs;
+    std::cout.flags(std::ios::left);
+    std::cout << std::setw(20) << ss.str();
+    for (size_t i=0; i < 20; ++i) std::cout << '\b';
+  };
+
+  auto batch_size = train_images.size();
+  onehot(train_labels, truth_labels, range);
+  nn.train<cross_entropy>(train_images, truth_labels, batch_size,
+                          n_train_epochs, learning_rate, 0.0005f, 
+                          []{},
+                          on_enumerate_epoch);
+
+  std::cout << "end training." << std::endl;
+
+  auto resutl = nn.predict_label({float(test_x), float(test_y)});
+  
+  std::cout << test_x << " " << op << " " << test_y << " = ";
+  if (resutl == range-1)
+    std::cout << "invalid" << std::endl;
+  else
+    std::cout << (resutl + min_t) << std::endl;
+}
+
+
 static void usage(const char *argv0) {
   std::cout << "Usage: " << argv0 << " --data_path path_to_dataset_folder"
             << " --learning_rate 1"
@@ -570,10 +679,14 @@ static void usage(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
+
   double learning_rate                   = 1;
   int epochs                             = 30;
   std::string data_path                  = "";
   int batch_size                         = 16;
+  int test_x = -1;
+  int test_y = -1;
+  char op = ' ';
 
   if (argc == 2) {
     std::string argname(argv[1]);
@@ -592,6 +705,15 @@ int main(int argc, char **argv) {
       batch_size = atoi(argv[count + 1]);
     } else if (argname == "--data_path") {
       data_path = std::string(argv[count + 1]);
+    } else if (argname == "--expr") {
+      auto expr = std::string(argv[count + 1]);
+      auto op_pos = expr.find_first_not_of("0123456789");
+      if (op_pos != std::string::npos) {
+        test_x = stoi(expr.substr(0, op_pos));
+        test_y = stoi(expr.substr(op_pos+1));
+        op = expr[op_pos];
+      }
+
     } else {
       std::cerr << "Invalid parameter specified - \"" << argname << "\""
                 << std::endl;
@@ -606,7 +728,12 @@ int main(int argc, char **argv) {
             << "Number of epochs: " << epochs << std::endl
             << std::endl;
   try {
-    train(data_path, learning_rate, epochs, batch_size);
+
+    if (op != ' ')
+      train_arth(learning_rate, epochs, op, test_x, test_y);
+    else 
+      train_mnist(data_path, learning_rate, epochs, batch_size);
+
   } catch (std::exception &err) {
     std::cerr << "Exception: " << err.what() << std::endl;
   }
